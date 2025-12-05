@@ -1,42 +1,125 @@
 from drafter import *
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from bakery import assert_equal
+from collections import Counter
+from typing import List, Dict, Set
 import random
 
+# Site info
+set_site_information(
+    author="scwagner@udel.edu",
+    description=(
+        "This website is a game called Nest Quest where you play as a duck, "
+        "exploring the world for resources to build various types of nests."
+    ),
+    sources=["https://github.com/scwagner-cpu/cisc106"],
+    planning=["Nest Quest.pdf"],
+    links=["https://github.com/scwagner-cpu/cisc106"]
+)
+hide_debug_information()
+set_website_title("Nest Quest")
+set_website_framed(False)
+
+# Data structures
 @dataclass
 class Item:
+    """An item you can collect"""
     name: str
     description: str
-    value: int
+    value: int = 0
 
 @dataclass
 class State:
-    duck_name: str
-    current_location: str
-    coins: int
-    inventory: list[Item]
-    visited_locations: list[str]
-    nest_progress: int
-    lifetime_coins: int
+    """Keeps track of game state"""
+    duck_name: str = "Duck"
+    current_location: str = "home"
+    coins: int = 0
+    inventory: List[Item] = field(default_factory=list)
+    visited_locations: List[str] = field(default_factory=list)
+    nest_progress: int = 0
+    lifetime_coins: int = 0
 
+# Helper functions
+def collected_item_names(state: State) -> Set[str]:
+    """Gets all the item names in inventory"""
+    return {item.name for item in state.inventory}
+
+def item_counts(state: State) -> Dict[str, int]:
+    """Counts how many of each item you have"""
+    return dict(Counter(item.name for item in state.inventory))
+
+def determine_nest_type(state: State) -> str:
+    """Figures out what type of nest you can build"""
+    names = collected_item_names(state)
+    # check all the nest types
+    if {"reeds", "sticks", "moss"}.issubset(names):
+        return "Cozy Nest"
+    if {"pebble", "feathers"}.issubset(names):
+        return "Decorative Nest"
+    if {"cloth", "twine", "moss"}.issubset(names):
+        return "Luxury Nest"
+    if {"sticks", "cloth"}.issubset(names):
+        return "Survival Nest"
+    if {"berries", "reeds"}.issubset(names):
+        return "Berry Nest"
+    if names:
+        return "Mixed Materials Nest"
+    return "No Nest Yet"
+
+def update_nest_progress(state: State) -> None:
+    """Updates the progress percentage"""
+    required = ["reeds", "sticks", "moss", "feathers", "twine", "cloth"]
+    collected = collected_item_names(state)
+    score = sum(1 for r in required if r in collected)
+    state.nest_progress = int((score / len(required)) * 100)
+
+def pond_image(state: State) -> str:
+    """Shows different image based on if you collected reeds"""
+    if "reeds" in collected_item_names(state):
+        return "pond_empty.png"
+    else:
+        return "pond_with_reeds.png"
+
+def forest_image(state: State) -> str:
+    """Shows different image based on if you collected sticks"""
+    if "sticks" in collected_item_names(state):
+        return "forest_empty.png"
+    else:
+        return "forest_with_sticks.png"
+
+def meadow_image(state: State) -> str:
+    """Shows different image based on if you collected feathers"""
+    if "feathers" in collected_item_names(state):
+        return "meadow_empty.png"
+    else:
+        return "meadow_with_feathers.png"
+
+def hill_image(state: State) -> str:
+    """Shows different image based on if you collected cloth/twine"""
+    names = collected_item_names(state)
+    if "twine" in names or "cloth" in names:
+        return "hill_empty.png"
+    else:
+        return "hill_with_cloth.png"
+
+# Routes
 @route
 def index(state: State) -> Page:
-    """Title and introduction page where player names their duck"""
+    """Title page where you name your duck"""
     return Page(state, [
         change_text_size(change_text_font(bold("🪺 Nest Quest 🦆"), "Verdana"), 45),
         "",
-        "Welcome to Nest Quest! You're a duck on a mission to build the perfect nest.",
+        "Welcome to Nest Quest! You're a duck on a mission to build the best nest.",
         "",
-        "Enter your duck's name here",
+        "Enter your duck's name:",
         TextBox("duck_name", ""),
-        "",
-        Button("Start Game", start_game)
+        Button("▶️ Start Game", start_game)
     ])
 
 @route
 def start_game(state: State, duck_name: str) -> Page:
-    """Initialize the game state and go to home"""
-    state.duck_name = duck_name if duck_name.strip() else "Duck"
+    """Starts the game with your duck name"""
+    state.duck_name = duck_name.strip() or "Duck"
     state.current_location = "home"
     state.coins = 0
     state.inventory = []
@@ -47,267 +130,469 @@ def start_game(state: State, duck_name: str) -> Page:
 
 @route
 def home(state: State) -> Page:
-    """Duck's nest - home base for the game"""
-    # Calculate nest progress based on collected items
-    required_items = {"reeds", "sticks", "moss"}
-    collected_items = {item.name for item in state.inventory}
-    
-    if required_items.issubset(collected_items):
-        nest_message = "✨ Your nest is complete! ✨"
-        state.nest_progress = 100
+    """Main home page with all the navigation"""
+    state.current_location = "home"
+    update_nest_progress(state)
+    nest_type = determine_nest_type(state)
+    if state.nest_progress >= 100:
+        nest_msg = f"✨ Your nest is complete! ({nest_type}) ✨"
     else:
-        # Calculate progress based on items collected
-        progress = (len(collected_items.intersection(required_items)) / len(required_items)) * 100
-        state.nest_progress = int(progress)
-        nest_message = f"Your nest is {state.nest_progress}% complete."
-    
+        nest_msg = f"Your nest is {state.nest_progress}% complete. Type: {nest_type}"
+
     return Page(state, [
         f"Welcome home, {state.duck_name}! 🏠",
         "",
-        nest_message,
+        nest_msg,
         f"Coins: {state.coins} 💰",
         "",
-        "Where would you like to go?",
         Button("🌊 Travel to Pond", pond),
         Button("🌲 Travel to Forest", forest),
         Button("🏘️ Travel to Town", town),
+        Button("🌼 Travel to Meadow", meadow),
+        Button("⛰️ Travel to Hill", hill),
+        Button("🎮 Play Forage Minigame", forage_minigame),
         Button("📊 View Summary", summary)
     ])
 
 @route
 def pond(state: State) -> Page:
-    """Collect reeds at the pond"""
+    """Pond location where you find reeds"""
     state.current_location = "pond"
     if "pond" not in state.visited_locations:
         state.visited_locations.append("pond")
-    
+
     return Page(state, [
-        change_text_size(bold("🌿The Pond 🐸"), 30),
+        "🌾 The Pond — a quiet pool where reeds grow.",
         "",
-        "🌾 You find tall reeds swaying gently by the pond. 🌾🌾",
-        "The water sparkles in the sunlight.",
-        Image("pond.png"),
-        "Collect reeds for your nest?",
-        CheckBox("collect_reeds", ""),
+        Image(pond_image(state)),
         "",
-        Button("Collect", collect_reeds),
-        Button("Return Home", home)
+        Button("🌾 Collect reeds", collect_reeds),
+        Button("↩️ Return Home", home)
     ])
 
-def collect_reeds(state: State, collect_reeds: bool) -> Page:
-    """Handle reed collection"""
-    if collect_reeds:
-        # Check if player already has reeds
-        has_reeds = any(item.name == "reeds" for item in state.inventory)
-        
-        if not has_reeds:
-            state.inventory.append(Item("reeds", "Soft pond reeds for nest lining", 0))
-            message = "You collected soft reeds! 🌾"
-            
-            # Random chance to find a coin
-            if random.random() < 0.5:
-                state.coins += 1
-                state.lifetime_coins += 1
-                message += " You also found a shiny coin! 💰"
-        else:
-            message = "You already have reeds in your inventory."
-        
-        return Page(state, [
-            f"🌊 The Pond",
-            "",
-            message,
-            "",
-            Button("Return Home", home)
-        ])
+@route
+def collect_reeds(state: State) -> Page:
+    """Collects reeds if you don't have them yet"""
+    if not any(i.name == "reeds" for i in state.inventory):
+        state.inventory.append(Item("reeds", "Soft pond reeds for nest lining"))
+        msg = "You collected soft reeds! 🌾"
+        # random chance to find a coin
+        if random.random() < 0.25:
+            state.coins += 1
+            state.lifetime_coins += 1
+            msg += " You found a coin! 💰"
     else:
-        return pond(state)
+        msg = "You already have reeds."
+
+    return Page(state, [
+        msg,
+        "",
+        Button("↩️ Return Home", home)
+    ])
 
 @route
 def forest(state: State) -> Page:
-    """Search for sticks in the forest"""
+    """Forest location where you find sticks"""
     state.current_location = "forest"
     if "forest" not in state.visited_locations:
         state.visited_locations.append("forest")
-    
+
     return Page(state, [
-        "🌲 The Forest",
+        "🌲 The Forest — lots of sticks and hidden surprises.",
         "",
-        "The forest floor is covered in good nesting sticks.",
-        "Leaves rustle overhead.",
-        Image("forest.jpg"),
+        Image(forest_image(state)),
         "",
-        CheckBox("search_sticks", "Search for sticks?"),
-        "",
-        Button("Search", search_sticks),
-        Button("Return Home", home)
+        Button("🪵 Collect sticks", collect_sticks),
+        Button("↩️ Return Home", home)
     ])
 
-def search_sticks(state: State, search_sticks: bool) -> Page:
-    """Handle stick collection"""
-    if search_sticks:
-        # Check if player already has sticks
-        has_sticks = any(item.name == "sticks" for item in state.inventory)
-        
-        if not has_sticks:
-            state.inventory.append(Item("sticks", "Strong twigs for the nest frame", 0))
-            message = "You found sturdy sticks! 🪵"
-            
-            # Random chance to find a coin
-            if random.random() < 0.5:
-                state.coins += 1
-                state.lifetime_coins += 1
-                message += " You also found a coin hidden under the leaves! 💰"
-        else:
-            message = "You already have sticks in your inventory."
-        
-        return Page(state, [
-            f"🌲 The Forest",
-            "",
-            message,
-            "",
-            Button("Return Home", home)
-        ])
+@route
+def collect_sticks(state: State) -> Page:
+    """Collects sticks if you don't have them"""
+    if not any(i.name == "sticks" for i in state.inventory):
+        state.inventory.append(Item("sticks", "Strong twigs for the nest frame"))
+        msg = "You found sturdy sticks! 🪵"
+        if random.random() < 0.25:
+            state.coins += 1
+            state.lifetime_coins += 1
+            msg += " You found a coin! 💰"
     else:
-        return forest(state)
+        msg = "You already have sticks."
+
+    return Page(state, [
+        msg,
+        "",
+        Button("↩️ Return Home", home)
+    ])
+
+@route
+def meadow(state: State) -> Page:
+    """Meadow location where you find feathers"""
+    state.current_location = "meadow"
+    if "meadow" not in state.visited_locations:
+        state.visited_locations.append("meadow")
+
+    return Page(state, [
+        "🌼 The Meadow — feathers drift on the breeze.",
+        "",
+        Image(meadow_image(state)),
+        "",
+        Button("🪶 Collect feathers", collect_feathers),
+        Button("↩️ Return Home", home)
+    ])
+
+@route
+def collect_feathers(state: State) -> Page:
+    """Collects feathers"""
+    if not any(i.name == "feathers" for i in state.inventory):
+        state.inventory.append(Item("feathers", "Soft feathers for insulation"))
+        msg = "You gathered feathers! 🪶"
+        if random.random() < 0.15:
+            state.coins += 1
+            state.lifetime_coins += 1
+            msg += " You found a coin! 💰"
+    else:
+        msg = "You already have feathers."
+
+    return Page(state, [
+        msg,
+        "",
+        Button("↩️ Return Home", home)
+    ])
+
+@route
+def hill(state: State) -> Page:
+    """Hill location where you might find twine or cloth"""
+    state.current_location = "hill"
+    if "hill" not in state.visited_locations:
+        state.visited_locations.append("hill")
+
+    return Page(state, [
+        "⛰️ The Hill — rocky, maybe useful scraps here.",
+        "",
+        Image(hill_image(state)),
+        "",
+        Button("🔎 Search the hill", search_hill),
+        Button("↩️ Return Home", home)
+    ])
+
+@route
+def search_hill(state: State) -> Page:
+    """Search for twine or cloth - random what you find"""
+    msg = "You searched but didn't find anything useful."
+    names = collected_item_names(state)
+    rand_val = random.random()
+    
+    if "twine" not in names and rand_val < 0.40:
+        state.inventory.append(Item("twine", "Strong twine for binding"))
+        msg = "You found twine! 🧵"
+    elif "cloth" not in names and rand_val < 0.65:
+        state.inventory.append(Item("cloth", "A scrap of cloth—durable"))
+        msg = "You found cloth! 🧶"
+
+    return Page(state, [
+        msg,
+        "",
+        Button("↩️ Return Home", home)
+    ])
 
 @route
 def town(state: State) -> Page:
-    """Shop in Duck Town"""
+    """Shop where you can buy items with coins"""
     state.current_location = "town"
     if "town" not in state.visited_locations:
         state.visited_locations.append("town")
-    
+
     return Page(state, [
-        f"🏘️ Duck Town Shop",
+        "🏘️ Duck Town — a small shop with useful items.",
         "",
-        f"Welcome to Duck Town's shop, {state.duck_name}!",
+        Image("town.png"),
+        "",
         f"You have {state.coins} coins. 💰",
         "",
         SelectBox("item_choice", [
-            "Soft moss (3 coins)",
-            "Shiny pebble (2 coins)"
+            "Soft moss",
+            "Shiny pebble",
+            "Bundle of twine",
+            "Cloth scrap"
         ]),
-        "",
-        Button("Buy Item", buy_item),
-        Button("Return Home", home)
-    ])
-
-def buy_item(state: State, item_choice: str) -> Page:
-    """Handle item purchase"""
-    message = ""
-    
-    if "moss" in item_choice.lower():
-        cost = 3
-        if state.coins >= cost:
-            # Check if player already has moss
-            has_moss = any(item.name == "moss" for item in state.inventory)
-            if not has_moss:
-                state.coins -= cost
-                state.inventory.append(Item("moss", "Soft moss for nest comfort", 3))
-                message = "You bought soft moss! Your nest will be so cozy! 🌿"
-            else:
-                message = "You already have moss in your inventory."
-        else:
-            message = "You don't have enough coins! You need 3 coins."
-    
-    elif "pebble" in item_choice.lower():
-        cost = 2
-        if state.coins >= cost:
-            state.coins -= cost
-            state.inventory.append(Item("pebble", "A decorative shiny pebble", 2))
-            message = "You bought a shiny pebble! So pretty! ✨"
-        else:
-            message = "You don't have enough coins! You need 2 coins."
-    
-    return Page(state, [
-        f"🏘️ Duck Town Shop",
-        "",
-        message,
-        f"You now have {state.coins} coins.",
-        "",
-        Button("Return Home", home)
+        Button("🛒 Buy Item", buy_item),
+        Button("↩️ Return Home", home)
     ])
 
 @route
+def buy_item(state: State, item_choice: str) -> Page:
+    """Handles buying items from the shop"""
+    choice = item_choice.lower()
+    if "moss" in choice:
+        cost, name, desc = 3, "moss", "Soft moss for nest comfort"
+    elif "pebble" in choice:
+        cost, name, desc = 2, "pebble", "A decorative shiny pebble"
+    elif "twine" in choice:
+        cost, name, desc = 3, "twine", "Strong twine for binding"
+    elif "cloth" in choice:
+        cost, name, desc = 4, "cloth", "A scrap of cloth—durable"
+    else:
+        return Page(state, ["Invalid item.", Button("↩️ Return Home", home)])
+
+    if state.coins < cost:
+        msg = f"Not enough coins! You need {cost}."
+    elif any(i.name == name for i in state.inventory):
+        msg = f"You already have {name}."
+    else:
+        state.coins -= cost
+        state.inventory.append(Item(name, desc, cost))
+        msg = f"You bought {name}! {desc}"
+
+    return Page(state, [
+        msg,
+        "",
+        Button("↩️ Return Home", home)
+    ])
+
+@route
+def forage_minigame(state: State) -> Page:
+    """Minigame where you pick a bush and might find berries or coins"""
+    state.current_location = "forage_minigame"
+    if "forage_minigame" not in state.visited_locations:
+        state.visited_locations.append("forage_minigame")
+
+    return Page(state, [
+        "🎮 Forage Minigame: pick a bush to search!",
+        "",
+        Image("forage.png"),
+        "",
+        Button("🌳", forage_A),
+        Button("🌳", forage_B),
+        Button("🌳", forage_C),
+        Button("↩️ Return Home", home)
+    ])
+
+@route
+def forage_A(state: State) -> Page:
+    """Bush A choice"""
+    return forage_choice(state, "A")
+
+@route
+def forage_B(state: State) -> Page:
+    """Bush B choice"""
+    return forage_choice(state, "B")
+
+@route
+def forage_C(state: State) -> Page:
+    """Bush C choice"""
+    return forage_choice(state, "C")
+
+def forage_choice(state: State, choice: str) -> Page:
+    """Handles the random outcome of picking a bush - can't unit test randomness"""
+    bushes = ["A", "B", "C"]
+    berry_bush = bushes[random.randint(0, 2)]
+    if choice == berry_bush:
+        state.inventory.append(Item("berries", "Sweet berries"))
+        msg = "You found berries! 🍓"
+    else:
+        if random.random() < 0.5:
+            state.coins += 1
+            state.lifetime_coins += 1
+            msg = "You found a coin! 💰"
+        else:
+            msg = "Nothing here."
+
+    return Page(state, [
+        msg,
+        "",
+        Image("forage.png"),
+        "",
+        Button("🔁 Play Again", forage_minigame),
+        Button("↩️ Return Home", home)
+    ])
+
+@route
+def restart(state: State) -> Page:
+    """Restarts the game but keeps your duck name"""
+    return start_game(state, state.duck_name)
+
+@route
 def summary(state: State) -> Page:
-    """Progress summary page"""
-    inventory_display = []
-    if state.inventory:
-        for item in state.inventory:
-            inventory_display.append(f"- **{item.name}**: {item.description}")
+    """Shows your progress and what nests you can build"""
+    update_nest_progress(state)
+    nest_type = determine_nest_type(state)
+    counts = item_counts(state)
+
+    inventory_lines = []
+    if counts:
+        for name, qty in sorted(counts.items()):
+            inventory_lines.append(f"- **{name}** × {qty}")
     else:
-        inventory_display = ["No items collected yet."]
-    
-    # Check if nest is complete
-    required_items = {"reeds", "sticks", "moss"}
-    collected_items = {item.name for item in state.inventory}
-    
-    if required_items.issubset(collected_items):
-        completion_message = "🎉 You built the perfect nest! Congratulations! 🎉"
-    else:
-        missing_items = required_items - collected_items
-        completion_message = f"Keep exploring to finish your nest! You still need: {', '.join(missing_items)}"
-    
+        inventory_lines = ["No items collected yet."]
+
+    # check what nests you can build
+    nests = [
+        ("Cozy Nest", ["reeds", "sticks", "moss"]),
+        ("Decorative Nest", ["pebble", "feathers"]),
+        ("Luxury Nest", ["cloth", "twine", "moss"]),
+        ("Survival Nest", ["sticks", "cloth"]),
+        ("Berry Nest", ["berries", "reeds"]),
+    ]
+    have = collected_item_names(state)
+    possible_lines = []
+    for label, reqs in nests:
+        missing = [r for r in reqs if r not in have]
+        if not missing:
+            possible_lines.append(f"• {label} — ready to build ✅")
+        else:
+            possible_lines.append(f"• {label} — missing: {', '.join(missing)}")
+
     return Page(state, [
         "# 📊 Your Nesting Progress",
         "",
-        f"**Duck Name:** {state.duck_name}",
-        f"**Coins:** {state.coins} 💰",
-        f"**Lifetime Coins:** {state.lifetime_coins}",
-        f"**Nest Progress:** {state.nest_progress}%",
+        Image("home.png"),
         "",
-        "Inventory:",
-        *inventory_display,
+        f"**Duck:** {state.duck_name}",
+        f"**Nest Type:** {nest_type}",
+        f"**Progress:** {state.nest_progress}%",
+        f"**Coins:** {state.coins} (lifetime: {state.lifetime_coins})",
         "",
-        completion_message,
+        "### 🧰 Inventory:",
+        *inventory_lines,
         "",
-        Button("Return Home", home)
+        "### 🪺 Nest Options:",
+        *possible_lines,
+        "",
+        Button("↩️ Return Home", home),
+        Button("🔄 Restart Game", restart)
     ])
 
-# Unit Tests
-assert_equal(index(State("", "", 0, [], [], 0, 0)).content[0], "# 🦆 Nest Quest")
+# Unit tests
+# Test index page loads
+s1 = State()
+p1 = index(s1)
+assert_equal("Nest Quest" in str(p1.content), True)
 
-# Test start game functionality
-test_state = State("", "", 0, [], [], 0, 0)
-result_page = start_game(test_state, "Quackers")
-assert_equal(test_state.duck_name, "Quackers")
-assert_equal(test_state.current_location, "home")
-assert_equal(test_state.coins, 0)
+# Test start game with name
+s2 = State()
+start_game(s2, "Quackers")
+assert_equal(s2.duck_name, "Quackers")
 
-# Test home page displays duck name
-test_state2 = State("Waddles", "home", 5, [], [], 0, 0)
-home_page = home(test_state2)
-assert_equal("Waddles" in str(home_page.content), True)
+# Test empty name becomes Duck
+s3 = State()
+start_game(s3, "")
+assert_equal(s3.duck_name, "Duck")
 
-# Test pond visit adds to visited locations
-test_state3 = State("Duck", "home", 0, [], [], 0, 0)
-pond(test_state3)
-assert_equal(test_state3.visited_locations, ["pond"])
+# Test home shows duck name
+s4 = State(duck_name="Waddles")
+p2 = home(s4)
+assert_equal("Waddles" in str(p2.content), True)
 
-# Test forest visit adds to visited locations
-test_state4 = State("Duck", "home", 0, [], [], 0, 0)
-forest(test_state4)
-assert_equal(test_state4.visited_locations, ["forest"])
+# Test pond visited
+s5 = State()
+pond(s5)
+assert_equal("pond" in s5.visited_locations, True)
 
-# Test collecting reeds adds to inventory
-test_state5 = State("Duck", "pond", 0, [], [], 0, 0)
-collect_reeds(test_state5, True)
-assert_equal(len(test_state5.inventory), 1)
-assert_equal(test_state5.inventory[0].name, "reeds")
+# Test forest visited
+s6 = State()
+forest(s6)
+assert_equal("forest" in s6.visited_locations, True)
 
-# Test collecting sticks adds to inventory
-test_state6 = State("Duck", "forest", 0, [], [], 0, 0)
-search_sticks(test_state6, True)
-assert_equal(len(test_state6.inventory), 1)
-assert_equal(test_state6.inventory[0].name, "sticks")
+# Test meadow visited
+s7 = State()
+meadow(s7)
+assert_equal("meadow" in s7.visited_locations, True)
 
-# Test nest progress calculation
-test_state7 = State("Duck", "home", 0, [
-    Item("reeds", "Soft reeds", 0),
-    Item("sticks", "Strong sticks", 0),
-    Item("moss", "Soft moss", 3)
-], [], 0, 0)
-home(test_state7)
-assert_equal(test_state7.nest_progress, 100)
+# Test collect reeds
+s8 = State()
+collect_reeds(s8)
+assert_equal(len(s8.inventory), 1)
+assert_equal(s8.inventory[0].name, "reeds")
 
-start_server(State("", "", 0, [], [], 0, 0))
+# Test collect sticks
+s9 = State()
+collect_sticks(s9)
+assert_equal(len(s9.inventory), 1)
+assert_equal(s9.inventory[0].name, "sticks")
+
+# Test collect feathers
+s10 = State()
+collect_feathers(s10)
+assert_equal(len(s10.inventory), 1)
+assert_equal(s10.inventory[0].name, "feathers")
+
+# Test buying moss
+s11 = State(coins=5)
+buy_item(s11, "Soft moss (3 coins)")
+assert_equal(len(s11.inventory), 1)
+assert_equal(s11.inventory[0].name, "moss")
+assert_equal(s11.coins, 2)
+
+# Test buying pebble
+s12 = State(coins=5)
+buy_item(s12, "Shiny pebble (2 coins)")
+assert_equal(s12.inventory[0].name, "pebble")
+assert_equal(s12.coins, 3)
+
+# Test buying cloth
+s13 = State(coins=4)
+buy_item(s13, "Cloth scrap (4 coins)")
+assert_equal(s13.inventory[0].name, "cloth")
+assert_equal(s13.coins, 0)
+
+# Test not enough coins
+s14 = State(coins=1)
+buy_item(s14, "Soft moss (3 coins)")
+assert_equal(len(s14.inventory), 0)
+assert_equal(s14.coins, 1)
+
+# Test collected_item_names helper
+s15 = State(inventory=[Item("reeds", ""), Item("sticks", "")])
+names = collected_item_names(s15)
+assert_equal("reeds" in names, True)
+assert_equal("sticks" in names, True)
+
+# Test item_counts helper
+s16 = State(inventory=[Item("pebble", ""), Item("pebble", ""), Item("moss", "")])
+counts = item_counts(s16)
+assert_equal(counts["pebble"], 2)
+assert_equal(counts["moss"], 1)
+
+# Test Cozy Nest
+s17 = State(inventory=[Item("reeds", ""), Item("sticks", ""), Item("moss", "")])
+nest = determine_nest_type(s17)
+assert_equal(nest, "Cozy Nest")
+
+# Test Decorative Nest
+s18 = State(inventory=[Item("pebble", ""), Item("feathers", "")])
+nest2 = determine_nest_type(s18)
+assert_equal(nest2, "Decorative Nest")
+
+# Test Berry Nest
+s19 = State(inventory=[Item("berries", ""), Item("reeds", "")])
+nest3 = determine_nest_type(s19)
+assert_equal(nest3, "Berry Nest")
+
+# Test no nest
+s20 = State(inventory=[])
+nest4 = determine_nest_type(s20)
+assert_equal(nest4, "No Nest Yet")
+
+# Test nest progress
+s21 = State(inventory=[Item("reeds", ""), Item("sticks", ""), Item("moss", "")])
+update_nest_progress(s21)
+assert_equal(s21.nest_progress, 50)
+
+# Test forage page loads - can't test randomness
+s22 = State()
+p3 = forage_minigame(s22)
+assert_equal("forage_minigame" in s22.visited_locations, True)
+
+# Test summary shows name
+s23 = State(duck_name="Tester")
+p4 = summary(s23)
+assert_equal("Tester" in str(p4.content), True)
+
+# Test restart keeps name
+s24 = State(duck_name="QuackMaster", coins=10)
+restart(s24)
+assert_equal(s24.duck_name, "QuackMaster")
+assert_equal(s24.coins, 0)
+
+start_server(State())
